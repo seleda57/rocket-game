@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Космический курьер</title>
+<style>
+:root{--ink:#e8ecff;--mut:#9aa6d6;--glass:rgba(14,20,48,.74);--acc:#6fe3ff;color-scheme:dark}
+html,body{margin:0;height:100%;background:#070b1c;color:var(--ink);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;display:block}
+#hud{position:fixed;left:10px;right:10px;top:calc(env(safe-area-inset-top,0px) + 8px);display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.card{background:var(--glass);border:1px solid rgba(111,227,255,.25);border-radius:14px;padding:7px 12px;font-size:.92rem}
+#q{flex:1;min-width:180px}
+.bar{width:110px;height:9px;border-radius:6px;background:#1c2447;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;width:100%;background:var(--acc);transition:background .3s}
+#pr{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);text-align:center;font-weight:700;color:#ffd23f;text-shadow:0 1px 6px #000;pointer-events:none;padding:0 12px}
+#ts{position:fixed;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 96px);text-align:center;opacity:0;transition:opacity .3s;pointer-events:none;font-weight:700;text-shadow:0 1px 6px #000}
+#help{position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 8px);font-size:.75rem;color:var(--mut);pointer-events:none}
+#ctl{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:none;justify-content:space-between;padding:0 14px}
+#ctl div{display:flex;gap:10px;align-items:flex-end}
+#ctl button{width:62px;height:62px;border-radius:50%;border:1px solid rgba(111,227,255,.5);background:var(--glass);color:var(--ink);font-size:1.5rem;padding:0}
+#bf{width:76px!important;height:76px!important;background:rgba(255,140,60,.5)!important}
+@media (pointer:coarse){#ctl{display:flex}#pr{bottom:calc(env(safe-area-inset-bottom,0px) + 100px)}#help{display:none}}
+#dlg{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(3,6,20,.72);padding:16px}
+.box{max-width:420px;background:#121a40;border:1px solid var(--acc);border-radius:20px;padding:20px 22px;box-shadow:0 10px 40px #000}
+.box h2{margin:0 0 8px;font-size:1.25rem}.box p{margin:0 0 16px;line-height:1.5;color:#d3dbff}
+.box button{border:0;background:var(--acc);color:#06122b;font:inherit;font-weight:800;padding:10px 20px;border-radius:999px;cursor:pointer}
+button:focus-visible{outline:3px solid #ffd23f;outline-offset:2px}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="hud"><div class="card">Корпус<div class="bar"><i id="hb"></i></div></div><div class="card" id="q"></div><div class="card" id="it"></div></div>
+<div id="ts"></div><div id="pr"></div>
+<div id="help">← → поворот · ↑ тяга · ↓ тормоз · ПРОБЕЛ посадка</div>
+<div id="ctl"><div><button data-k="l" aria-label="Влево">◀</button><button data-k="r" aria-label="Вправо">▶</button></div><div><button data-k="d" aria-label="Тормоз">⏹</button><button id="bl" aria-label="Посадка">🛬</button><button id="bf" data-k="u" aria-label="Тяга">🔥</button></div></div>
+<div id="dlg"><div class="box"><h2 id="dt"></h2><p id="dx"></p><button id="db">Взлёт</button></div></div>
+<script>
+const $=s=>document.querySelector(s),cv=$('#c'),g=cv.getContext('2d'),R=Math.random,TAU=Math.PI*2;
+let W,H;function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight}addEventListener('resize',rs);rs();
+const PL={earth:{n:'Земля',x:0,y:0,r:90,c:['#3b8cff','#2f9e5a']},moon:{n:'Луна',x:520,y:-380,r:46,c:['#cfcfd8','#8a8a96']},mars:{n:'Марс',x:1500,y:300,r:70,c:['#ff8a5c','#a8381f']},stat:{n:'Станция «Орион»',x:800,y:950,r:38,c:['#cfd8ff','#6b7bbd']},titan:{n:'Титан',x:-1200,y:850,r:80,c:['#ffcf5c','#b8741f']}};
+Object.values(PL).forEach(p=>p.b=Array.from({length:7},()=>({a:R()*TAU,d:R()*.7,r:.12+R()*.25})));
+const ST=[
+{p:'moon',goal:'Лети на Луну за лунными камнями',who:'Луна',say:'Вы собрали контейнер лунных камней! Пора вернуться на Землю.',item:'🪨 Лунные камни'},
+{p:'earth',goal:'Верни камни профессору на Земле',who:'Профессор Лебедев',say:'Великолепные образцы! Теперь отвези это письмо колонистке Ане на Марс.',item:'✉️ Письмо для Ани'},
+{p:'mars',goal:'Передай письмо Ане на Марсе',who:'Колонистка Ана',say:'Спасибо за письмо! Нам нужны 5 энергокристаллов. Они светятся голубым в космосе рядом с Марсом.',item:''},
+{collect:5,goal:'Собери 5 голубых энергокристаллов около Марса',item:'💎 Кристаллы'},
+{p:'mars',goal:'Отвези кристаллы Ане на Марс',who:'Колонистка Ана',say:'Колония снова с энергией! Передай эту посылку инженеру Киму на станции «Орион».',item:'📦 Посылка для Кима'},
+{p:'stat',goal:'Доставь посылку инженеру Киму на станцию',who:'Инженер Ким',say:'Это нужные запчасти! Последняя просьба: доставь радиомаяк на Титан.',item:'📡 Радиомаяк'},
+{p:'titan',goal:'Доставь радиомаяк на Титан',who:'Исследователь Тони',say:'Маяк заработал! Вы настоящий космический курьер. Миссия выполнена! 🏆',item:'',end:1}];
+const stars=Array.from({length:140},()=>({x:R()*2000,y:R()*2000,d:.05+R()*.25,z:R()*1.6+.6}));
+let s,M,step,item,cr,got,pause,dcb,k={},tt,last=0;
+const hy=a=>Math.hypot(a.x-s.x,a.y-s.y);
+function mk(far){const a=R()*TAU,d=far?500+R()*500:900+R()*200,v=.4+R()*1.6,b=a+Math.PI+(R()-.5)*1.2;
+return{x:s.x+Math.cos(a)*d,y:s.y+Math.sin(a)*d,vx:Math.cos(b)*v,vy:Math.sin(b)*v,r:10+R()*22,rot:R()*TAU,vr:(R()-.5)*.03,pts:Array.from({length:9},()=>.75+R()*.4)}}
+function toast(m){const e=$('#ts');e.textContent=m;e.style.opacity=1;clearTimeout(tt);tt=setTimeout(()=>e.style.opacity=0,1900)}
+function dlg(t,x,b,cb){k={};$('#dt').textContent=t;$('#dx').textContent=x;$('#db').textContent=b;$('#dlg').style.display='flex';pause=1;dcb=cb}
+$('#db').onclick=()=>{$('#dlg').style.display='none';pause=0;const f=dcb;dcb=null;f&&f()};
+function init(){s={x:0,y:-170,vx:0,vy:0,a:-Math.PI/2,hp:100,inv:0};step=0;item='';cr=[];got=0;M=Array.from({length:28},()=>mk(1));
+dlg('Привет, пилот!','Я профессор Лебедев. Работа курьера проста: уворачивайтесь от метеоритов, садитесь на планеты (подлетите медленно и нажмите ПРОБЕЛ или 🛬) и выполняйте задания. Первое: слетайте на Луну за лунными камнями. Жёлтая стрелка по краю экрана покажет путь.','Взлёт')}
+function near(){for(const key in PL){const p=PL[key];if(hy(p)<p.r+75)return[key,p]}}
+function hurt(n){if(s.inv>0)return;s.hp-=n;s.inv=70;toast('💥 Удар! −'+n);if(s.hp<=0)dlg('Корабль разбит','Аварийная служба вернула вас на Землю и починила корпус.','Лететь дальше',()=>{s.x=0;s.y=-170;s.vx=s.vy=0;s.hp=100;s.inv=120})}
+function tryLand(){if(pause)return;const n=near();if(!n)return toast('Рядом нет планеты');
+if(Math.hypot(s.vx,s.vy)>2.5)return toast('Слишком быстро! Притормозите (↓)');
+const[key,p]=n,st=ST[step],d=hy(p),nx=(s.x-p.x)/d,ny=(s.y-p.y)/d;s.hp=100;s.vx=s.vy=0;
+const out=()=>{s.x=p.x+nx*(p.r+55);s.y=p.y+ny*(p.r+55)};
+if(st.p===key){item=st.item;if(st.end)return dlg(st.who,st.say,'Играть снова',init);
+step++;if(ST[step].collect){got=0;cr=Array.from({length:5},()=>{const a=R()*TAU,d=260+R()*380;return{x:PL.mars.x+Math.cos(a)*d,y:PL.mars.y+Math.sin(a)*d}})}
+dlg(st.who,st.say+'  Новое задание: '+ST[step].goal+'.','Взлёт',out)}
+else dlg('Посадка: '+p.n,'Корпус полностью отремонтирован. Ваше задание: '+st.goal+'.','Взлёт',out)}
+function upd(dt){
+if(k.l)s.a-=.065*dt;if(k.r)s.a+=.065*dt;
+if(k.u){s.vx+=Math.cos(s.a)*.13*dt;s.vy+=Math.sin(s.a)*.13*dt}
+if(k.d){const f=Math.pow(.94,dt);s.vx*=f;s.vy*=f}
+const f=Math.pow(.997,dt);s.vx*=f;s.vy*=f;const v=Math.hypot(s.vx,s.vy);if(v>9){s.vx*=9/v;s.vy*=9/v}
+s.x+=s.vx*dt;s.y+=s.vy*dt;
+if(Math.abs(s.x)>2800){s.x=Math.sign(s.x)*2800;s.vx*=-.5}if(Math.abs(s.y)>2800){s.y=Math.sign(s.y)*2800;s.vy*=-.5}
+s.inv=Math.max(0,s.inv-dt);
+for(const key in PL){const p=PL[key],d=hy(p);if(d<p.r+12){const nx=(s.x-p.x)/d,ny=(s.y-p.y)/d;s.x=p.x+nx*(p.r+12);s.y=p.y+ny*(p.r+12);const vn=s.vx*nx+s.vy*ny;if(vn<0){s.vx-=1.5*vn*nx;s.vy-=1.5*vn*ny;if(-vn>2.5)hurt(8)}}}
+for(const m of M){m.x+=m.vx*dt;m.y+=m.vy*dt;m.rot+=m.vr*dt;const d=hy(m);
+if(d>1300)Object.assign(m,mk());
+else if(d<m.r+13&&s.inv<=0){hurt(Math.round(m.r*.6));const nx=(s.x-m.x)/d,ny=(s.y-m.y)/d;s.vx+=nx*3;s.vy+=ny*3;m.vx-=nx*1.2;m.vy-=ny*1.2}}
+for(let i=cr.length-1;i>=0;i--)if(hy(cr[i])<30){cr.splice(i,1);got++;toast('💎 Кристалл '+got+' из 5');
+if(got>=5){item=ST[3].item;step=4;toast('💎 Все кристаллы собраны! Лети на Марс')}}}
+function dp(key,p,t){g.save();g.translate(p.x,p.y);const inz=hy(p)<p.r+75;
+g.setLineDash([8,10]);g.strokeStyle='rgba(111,227,255,'+(inz?.75:.18)+')';g.lineWidth=2;g.beginPath();g.arc(0,0,p.r+75,0,TAU);g.stroke();g.setLineDash([]);
+if(key==='stat'){g.rotate(t/5000);g.fillStyle='#3a56c9';g.fillRect(-p.r-42,-9,38,18);g.fillRect(p.r+4,-9,38,18);g.fillStyle=p.c[0];g.beginPath();g.arc(0,0,p.r,0,TAU);g.fill();g.strokeStyle=p.c[1];g.lineWidth=6;g.beginPath();g.arc(0,0,p.r*.62,0,TAU);g.stroke();g.fillStyle='#ffd23f';g.beginPath();g.arc(0,0,8,0,TAU);g.fill();g.rotate(-t/5000)}
+else{g.fillStyle=p.c[0];g.beginPath();g.arc(0,0,p.r,0,TAU);g.fill();g.save();g.clip();g.fillStyle=p.c[1];g.globalAlpha=.55;
+for(const b of p.b){g.beginPath();g.arc(Math.cos(b.a)*b.d*p.r,Math.sin(b.a)*b.d*p.r,b.r*p.r,0,TAU);g.fill()}g.globalAlpha=1;
+const gr=g.createRadialGradient(-p.r*.4,-p.r*.4,p.r*.1,0,0,p.r);gr.addColorStop(0,'rgba(255,255,255,.25)');gr.addColorStop(.6,'rgba(0,0,0,0)');gr.addColorStop(1,'rgba(0,0,0,.6)');g.fillStyle=gr;g.fillRect(-p.r,-p.r,2*p.r,2*p.r);g.restore();
+g.globalAlpha=.25;g.strokeStyle=p.c[0];g.lineWidth=6;g.beginPath();g.arc(0,0,p.r+3,0,TAU);g.stroke();g.globalAlpha=1}
+g.fillStyle='#e8ecff';g.font='bold 15px sans-serif';g.textAlign='center';g.fillText(p.n,0,-p.r-86);
+if(ST[step].p===key){g.fillStyle='#ffd23f';g.font='22px sans-serif';g.fillText('★',0,-p.r-106+Math.sin(t/300)*4)}
+g.restore()}
+function draw(t){g.fillStyle='#070b1c';g.fillRect(0,0,W,H);const cx=s.x-W/2,cy=s.y-H/2;
+for(const q of stars){const x=(((q.x-cx*q.d)%2000)+2000)%2000*W/2000,y=(((q.y-cy*q.d)%2000)+2000)%2000*H/2000;g.globalAlpha=.4+.3*Math.sin(t/600+q.x);g.fillStyle='#fff';g.fillRect(x,y,q.z,q.z)}g.globalAlpha=1;
+g.save();g.translate(-cx,-cy);
+for(const key in PL)dp(key,PL[key],t);
+for(const c of cr){const p=1+Math.sin(t/200+c.x)*.15;g.save();g.translate(c.x,c.y);g.scale(p,p);g.shadowColor='#6fe3ff';g.shadowBlur=18;g.fillStyle='#6fe3ff';g.beginPath();g.moveTo(0,-16);g.lineTo(11,0);g.lineTo(0,16);g.lineTo(-11,0);g.closePath();g.fill();g.restore()}
+for(const m of M){g.save();g.translate(m.x,m.y);g.rotate(m.rot);g.beginPath();m.pts.forEach((p,i)=>{const a=i/9*TAU;g[i?'lineTo':'moveTo'](Math.cos(a)*m.r*p,Math.sin(a)*m.r*p)});g.closePath();g.fillStyle='#6b6270';g.fill();g.strokeStyle='#a79cae';g.lineWidth=2;g.stroke();g.restore()}
+g.save();g.translate(s.x,s.y);g.rotate(s.a);g.scale(1.3,1.3);
+if(k.u){g.fillStyle='#ffb347';g.beginPath();g.moveTo(-9,-5);g.lineTo(-20-R()*9,0);g.lineTo(-9,5);g.fill()}
+if(s.inv>0&&Math.floor(s.inv/6)%2)g.globalAlpha=.35;
+g.fillStyle='#e8ecff';g.beginPath();g.moveTo(16,0);g.lineTo(-11,-11);g.lineTo(-6,0);g.lineTo(-11,11);g.closePath();g.fill();
+g.fillStyle='#2a8fd6';g.beginPath();g.arc(3,0,3.5,0,TAU);g.fill();g.restore();
+g.restore();
+const st=ST[step],tg=st.collect?cr.slice().sort((a,b)=>hy(a)-hy(b))[0]:PL[st.p];
+if(tg){const dx=tg.x-s.x,dy=tg.y-s.y,d=Math.hypot(dx,dy),m=Math.min(W,H)/2-50;
+if(d>m+60){const a=Math.atan2(dy,dx),X=W/2+Math.cos(a)*m,Y=H/2+Math.sin(a)*m;g.save();g.translate(X,Y);g.rotate(a);g.fillStyle='#ffd23f';g.beginPath();g.moveTo(14,0);g.lineTo(-10,-10);g.lineTo(-10,10);g.fill();g.restore();
+g.fillStyle='#ffd23f';g.font='12px sans-serif';g.textAlign='center';g.fillText(Math.round(d/10)+' км',W/2+Math.cos(a)*(m-30),H/2+Math.sin(a)*(m-30)+4)}}}
+function hud(){const st=ST[step];$('#hb').style.width=Math.max(0,s.hp)+'%';$('#hb').style.background=s.hp<35?'#ff6f7d':'#6fe3ff';
+$('#q').textContent='🎯 '+st.goal+(st.collect?' ('+got+'/5)':'');$('#it').textContent=item?'🎒 '+item:'🎒 пусто';
+const n=near();$('#pr').textContent=pause||!n?'':(Math.hypot(s.vx,s.vy)>2.5?'Притормозите, чтобы сесть: '+n[1].n:'ПРОБЕЛ / 🛬 — посадка: '+n[1].n)}
+function loop(t){const dt=Math.min(2.5,(t-last)/16.67||1);last=t;if(!pause)upd(dt);draw(t);hud();requestAnimationFrame(loop)}
+const KM={ArrowLeft:'l',KeyA:'l',ArrowRight:'r',KeyD:'r',ArrowUp:'u',KeyW:'u',ArrowDown:'d',KeyS:'d'};
+addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='Enter'||KM[e.code])e.preventDefault();if(e.repeat)return;
+if(pause){if(e.code==='Space'||e.code==='Enter')$('#db').click();return}
+if(e.code==='Space')tryLand();else if(KM[e.code])k[KM[e.code]]=1});
+addEventListener('keyup',e=>{if(KM[e.code])k[KM[e.code]]=0});
+document.querySelectorAll('[data-k]').forEach(b=>{const n=b.dataset.k;b.addEventListener('pointerdown',e=>{e.preventDefault();k[n]=1});['pointerup','pointerleave','pointercancel'].forEach(v=>b.addEventListener(v,()=>k[n]=0))});
+$('#bl').addEventListener('click',tryLand);
+init();requestAnimationFrame(loop);
+</script></body></html>
